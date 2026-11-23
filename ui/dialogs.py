@@ -15,8 +15,8 @@ from .widgets import ChipFlow, PillEntry, ScrollFrame, SpectraButton, TagChip
 
 class SpectraDialog(tk.Toplevel):
     """Base class: a modal window with the SPECTRA look, centered over its parent."""
-
-    def __init__(self, parent, title, width=480):
+    
+    def __init__(self, parent, title, width=480, scrollable=False, max_height=560):
         super().__init__(parent, bg=theme.HAIRLINE)
         self.withdraw()
         self.title(title)
@@ -27,9 +27,70 @@ class SpectraDialog(tk.Toplevel):
         self.result = None
         self.buttons = {}
         self._min_width = px(width)
-        self.body = tk.Frame(self, bg=theme.DEEP_COSMOS, padx=px(30), pady=px(26))
-        self.body.pack(fill="both", expand=True, padx=1, pady=1)  # the 1px gap shows the hairline border
-
+        self._scroll_canvas = None
+        self._scroll_window = None
+        self._max_height = px(max_height) if scrollable else None
+        if scrollable:
+            container = tk.Frame(self, bg=theme.DEEP_COSMOS)
+            container.pack(fill="both", expand=True, padx=1, pady=1)
+            canvas = tk.Canvas(
+                container,
+                bg=theme.DEEP_COSMOS,
+                highlightthickness=0,
+                bd=0,
+                width=px(width) - px(18),
+                height=px(max_height)
+            )
+            scrollbar = ttk.Scrollbar(
+                container,
+                orient="vertical",
+                command=canvas.yview
+            )
+            canvas.configure(yscrollcommand=scrollbar.set)
+            scrollbar.pack(side="right", fill="y")
+            canvas.pack(side="left", fill="both", expand=True)
+            self.body = tk.Frame(
+                canvas,
+                bg=theme.DEEP_COSMOS,
+                padx=px(30),
+                pady=px(26)
+            )
+            self._scroll_window = canvas.create_window(
+                (0, 0),
+                window=self.body,
+                anchor="nw"
+            )
+            self._scroll_canvas = canvas
+            self.body.bind("<Configure>", self._update_scroll_region)
+            canvas.bind("<Configure>", self._resize_scroll_body)
+        else:
+            self.body = tk.Frame(
+                self,
+                bg=theme.DEEP_COSMOS,
+                padx=px(30),
+                pady=px(26)
+            )
+            self.body.pack(
+                fill="both",
+                expand=True,
+                padx=1,
+                pady=1
+            )
+    
+    def _update_scroll_region(self, event=None):
+        """Update the scrollable area whenever the body changes size."""
+        if self._scroll_canvas:
+            self._scroll_canvas.configure(
+                scrollregion=self._scroll_canvas.bbox("all")
+            )
+    
+    def _resize_scroll_body(self, event):
+        """Keep the body width synchronized with the canvas."""
+        self._scroll_canvas.itemconfigure(
+            self._scroll_window,
+            width=event.width
+        )
+    
     def add_button_row(self, buttons):
         """buttons: list of (key, text, style, command) shown right-aligned."""
         row = tk.Frame(self.body, bg=theme.DEEP_COSMOS)
@@ -44,7 +105,10 @@ class SpectraDialog(tk.Toplevel):
     def show(self):
         """Center the dialog over its parent, block until it closes, return self.result."""
         self.update_idletasks()
-        width, height = max(self._min_width, self.winfo_reqwidth()), self.winfo_reqheight()
+        width = max(self._min_width, self.winfo_reqwidth())
+        height = self.winfo_reqheight()
+        if self._max_height is not None:
+            height = min(height, self._max_height + px(2))
         parent = self.master.winfo_toplevel()
         x = parent.winfo_rootx() + max((parent.winfo_width() - width) // 2, 0)
         y = parent.winfo_rooty() + max((parent.winfo_height() - height) // 3, 0)
@@ -59,15 +123,14 @@ class SpectraDialog(tk.Toplevel):
         self.focus_set()
         self.wait_window(self)
         return self.result
-
+    
     def cancel(self):
         self.result = None
         self.destroy()
 
-
 class MessageDialog(SpectraDialog):
     """An information, warning or error message with an OK button (or Yes/No when asking)."""
-
+    
     def __init__(self, parent, title, message, kind="info", ask=False, yes_text="Yes", no_text="Cancel"):
         super().__init__(parent, title, width=460)
         row = tk.Frame(self.body, bg=theme.DEEP_COSMOS)
@@ -94,7 +157,7 @@ class MessageDialog(SpectraDialog):
         else:
             self.add_button_row([("ok", "OK", "primary", self._yes)])
             self.bind("<Return>", lambda e: self._yes())
-
+    
     def _yes(self):
         self.result = True
         self.destroy()
@@ -113,7 +176,7 @@ def ask_yes_no(parent, title, message, yes_text="Yes", no_text="Cancel"):
 
 class GalleryPickerDialog(SpectraDialog):
     """Lets the user choose between several gallery files. result = the chosen Path, or None."""
-
+    
     def __init__(self, parent, gallery_files):
         super().__init__(parent, "Choose a gallery", width=480)
         self.files = list(gallery_files)
@@ -138,7 +201,7 @@ class GalleryPickerDialog(SpectraDialog):
         self._highlight()
         self.add_button_row([("cancel", "Cancel", "secondary", self.cancel), ("open", "Open", "primary", self._open)])
         self.bind("<Return>", lambda e: self._open())
-
+    
     def _build_row(self, parent, index, path):
         row = tk.Frame(parent, bg=theme.ORBIT_SLATE, highlightthickness=1, highlightbackground=theme.HAIRLINE,
                        cursor="hand2", padx=px(16), pady=px(10))
@@ -154,11 +217,11 @@ class GalleryPickerDialog(SpectraDialog):
             widget.bind("<Button-1>", lambda e, i=index: self._select(i))
             widget.bind("<Double-Button-1>", lambda e, i=index: (self._select(i), self._open()))
         return row, (name, detail)
-
+    
     def _select(self, index):
         self.selected = index
         self._highlight()
-
+    
     def _highlight(self):
         for index, (row, labels) in enumerate(self.rows):
             active = index == self.selected
@@ -166,7 +229,7 @@ class GalleryPickerDialog(SpectraDialog):
             row.configure(bg=fill, highlightbackground=theme.CHAMPAGNE_GOLD if active else theme.HAIRLINE)
             for label in labels:
                 label.configure(bg=fill)
-
+    
     def _open(self):
         self.result = self.files[self.selected]
         self.destroy()
@@ -174,12 +237,12 @@ class GalleryPickerDialog(SpectraDialog):
 
 class ImportDialog(SpectraDialog):
     """Pick tags for the chosen photos, then add them to the gallery using Gallery.Add_Image.
-
+    
     result = {"added": int, "duplicates": [names], "failed": [names]} once finished, else None.
     """
-
+    
     def __init__(self, parent, gallery, tag_manager, paths):
-        super().__init__(parent, "Import photos", width=540)
+        super().__init__(parent, "Import photos", width=540, scrollable=True, max_height=560)
         self.gallery = gallery
         self.paths = list(paths)
         self.selected_tags = []
@@ -210,7 +273,9 @@ class ImportDialog(SpectraDialog):
         self.progress = ttk.Progressbar(self.body, style="Spectra.Horizontal.TProgressbar", mode="determinate",
                                         maximum=max(count, 1))
         self.add_button_row([("cancel", "Cancel", "secondary", self.cancel), ("import", "Import", "primary", self._start)])
-
+        self.bind("<Return>", lambda event: self._start())
+        self.bind("<KP_Enter>", lambda event: self._start())
+    
     def _suggested_tags(self, tag_manager):
         """Default tags first, then tags already used in the gallery (no case-insensitive duplicates)."""
         seen, tags = set(), []
@@ -219,21 +284,21 @@ class ImportDialog(SpectraDialog):
                 seen.add(tag.lower())
                 tags.append(tag)
         return tags
-
+    
     def _add_suggestion(self, tag):
         chip_holder = {}
-
+    
         def toggle():
             if tag in self.selected_tags:
                 self.selected_tags.remove(tag)
             else:
                 self.selected_tags.append(tag)
             self._replace_chip(chip_holder, tag)
-
+    
         chip_holder["toggle"] = toggle
         chip_holder["chip"] = TagChip(self.chip_flow, tag, selected=False, command=toggle, compact=True)
         self.chip_flow.add(chip_holder["chip"])
-
+    
     def _replace_chip(self, holder, tag):
         """Rebuild one chip with its new selected state, keeping its position in the flow."""
         old = holder["chip"]
@@ -243,7 +308,7 @@ class ImportDialog(SpectraDialog):
         old.destroy()
         holder["chip"] = new
         self.chip_flow.reflow()
-
+    
     def _chosen_tags(self):
         tags = list(self.selected_tags)
         typed = self.tag_entry.get()
@@ -252,7 +317,7 @@ class ImportDialog(SpectraDialog):
             if piece and piece.lower() not in [t.lower() for t in tags]:
                 tags.append(piece)
         return tags
-
+    
     def _start(self):
         if self._running:
             return
@@ -266,7 +331,7 @@ class ImportDialog(SpectraDialog):
         tags = self._chosen_tags()
         threading.Thread(target=self._import_worker, args=(tags,), daemon=True).start()
         self.after(40, self._drain_events)
-
+    
     def _import_worker(self, tags):
         """Runs on a background thread. Only Gallery.Add_Image touches the gallery here."""
         existing = {os.path.normcase(os.path.abspath(str(img.Img_Path))) for img in self.gallery.Images}
@@ -282,7 +347,7 @@ class ImportDialog(SpectraDialog):
             else:
                 failed.append(name)
         self._events.put(("done", {"added": added, "duplicates": duplicates, "failed": failed}))
-
+    
     def _drain_events(self):
         try:
             while True:
@@ -297,3 +362,4 @@ class ImportDialog(SpectraDialog):
         except queue.Empty:
             pass
         self.after(40, self._drain_events)
+    
