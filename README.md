@@ -58,7 +58,7 @@ Each module contributes to a specific part of the application's functionality, k
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/SPECTRA.git
+git clone https://github.com/ziadkhattab39-sys/Spectra.git
 ```
 
 2. Navigate to the project directory:
