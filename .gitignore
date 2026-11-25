@@ -12,3 +12,8 @@ venv/
 # Operating system files
 .DS_Store
 Thumbs.db
+
+# Test Files
+test_core.py
+test_core_updated.py
+test_tag_manager_independent.py
